@@ -92,6 +92,7 @@ func (m *ImageMill) syncImages(images []ImageItem, attach *ImageAttach, syncType
 	var timeout = false
 	var imageCnt = 0
 	var imageNum = len(images)
+	var againImages []ImageItem
 	var failImages []ImageItem
 	if imageNum == 0 {
 		return okIds, nil
@@ -123,6 +124,8 @@ func (m *ImageMill) syncImages(images []ImageItem, attach *ImageAttach, syncType
 			if sync.Error == nil {
 				okIds = append(okIds, sync.Image.PicName)
 			} else if sync.SyncAgain {
+				againImages = append(againImages, sync.Image)
+			} else {
 				failImages = append(failImages, sync.Image)
 			}
 		case <-time.After(time.Second * 5):
@@ -136,13 +139,13 @@ func (m *ImageMill) syncImages(images []ImageItem, attach *ImageAttach, syncType
 		}
 	}
 
-	logger.Infof("单次欲同步:%d，失败:%d,成功:%d,类型:%s-%s", len(images), len(failImages), len(images)-len(failImages), syncType, attach.StrAttr)
+	logger.Infof("单次欲同步:%d,成功:%d,再次尝试:%d,其他失败:%d,类型:%s-%s", len(images), len(okIds), len(againImages), len(failImages), syncType, attach.StrAttr)
 
 	//重新上传因接口频率限制而失败的图片
-	if len(failImages) > 0 {
+	if len(againImages) > 0 {
 		time.Sleep(time.Millisecond * 500) //歇会
 		tryTimes--
-		newOkIds, err := m.syncImages(failImages, attach, syncType, tryTimes)
+		newOkIds, err := m.syncImages(againImages, attach, syncType, tryTimes)
 		if err != nil {
 			return okIds, nil
 		}
@@ -207,7 +210,10 @@ func (m *ImageMill) syncImageForAdd(image ImageItem, attach *ImageAttach, ret ch
 			}
 		}
 		logger.Error(err)
-		ret <- SyncReturn{Error: err}
+		ret <- SyncReturn{
+			Image: image,
+			Error: err,
+		}
 		return
 	}
 	ret <- SyncReturn{Image: image}
@@ -235,7 +241,10 @@ func (m *ImageMill) syncImageForDelete(image ImageItem, attach *ImageAttach, ret
 			}
 		}
 		logger.Error(err)
-		ret <- SyncReturn{Error: err}
+		ret <- SyncReturn{
+			Image: image,
+			Error: err,
+		}
 		return
 	}
 	ret <- SyncReturn{Image: image}
